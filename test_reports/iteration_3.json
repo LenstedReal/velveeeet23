@@ -1,0 +1,20 @@
+{
+  "summary": "Verified Vercel npm ERESOLVE fix (backend/config-only, no UI tests per request). All 5 requested checks pass: (1) ERESOLVE reproduced in temp dir with package.json alone; (2) adding .npmrc (legacy-peer-deps=true) resolves cleanly (1447 packages added in dry-run); (3) yarn build still succeeds (main.ee936189.js 171.87kB); (4) vercel.json valid JSON with installCommand='echo skip', buildCommand containing 'yarn install --legacy-peer-deps && yarn build', outputDirectory='frontend/build', /api rewrite -> /api/index; (5) api/index.py imports FastAPI app successfully (35 routes); (6) preview backend healthy — GET /api/ returns {app:VelvetAI,status:ok}, /api/characters returns 31 items.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/test_reports/iteration_3.json"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "vercel.json /api rewrite '/api/(.*)' -> '/api/index' is correct for Vercel Python serverless (Vercel treats /api/index.py as the function; captured path forwards via ASGI). Works because FastAPI app at /app/api/index.py mounts routes with /api prefix from backend/server.py.",
+    ".npmrc with legacy-peer-deps=true is a pragmatic fix for the date-fns@4 vs react-day-picker@8.10.1 peer conflict; long-term consider upgrading to react-day-picker v9 which supports date-fns v4, but this is out of scope for the deploy fix.",
+    "installCommand 'echo skip' plus buildCommand doing yarn install is a standard pattern for yarn-managed monorepo on Vercel and correctly bypasses Vercel's default npm install."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "not tested (per request: backend-only)"},
+  "test_credentials": "not required",
+  "seed_data_creation": "none — used /tmp/npm_repro temp dir for npm dry-run, cleaned up after",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Vercel deploy config verified. .npmrc + vercel.json fix works. Backend regression suite already at 38/38 in iteration_2. No changes needed. If Vercel still fails after this, the issue would be Vercel-side caching or account config, not code.",
+  "rca of the issue": "Root cause: Vercel default runs `npm install` (not yarn); package.json has date-fns@^4.1.0 (resolves 4.4.0) and react-day-picker@8.10.1 which declares peer date-fns@^2||^3, causing ERESOLVE under npm's strict peer resolution (npm 7+). Mitigation applied by main agent: (a) /app/frontend/.npmrc with 'legacy-peer-deps=true' as a defense-in-depth so any accidental npm install uses relaxed resolution; (b) /app/vercel.json overrides installCommand to 'echo skip' and buildCommand runs 'yarn install --legacy-peer-deps && yarn build' which uses yarn (peer conflicts non-fatal) and explicit legacy flag. Both fixes verified independently in this iteration."
+}

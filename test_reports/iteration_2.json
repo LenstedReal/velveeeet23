@@ -1,0 +1,41 @@
+{
+  "summary": "Full backend regression after MongoDB→Postgres JSONB migration. 38/38 pytest tests pass across health, auth (register/login/me/PATCH), characters (list/filters/CRUD/31 seeded), conversations (create-with-opener/list-enriched/messages-sorted/delete-with-cascade), chat/send (multi-bubble + XP+10), chat/stream SSE (meta+delta+done events), images (Pollinations FREE, returns URL+media_id), images/chat (attaches assistant image message), media CRUD (list-desc/favorite-toggle/delete), voice TTS (Edge-TTS FREE, valid MP3 base64), scenarios (12), stories, live, roulette, Discord OAuth entry (307 redirect to discord.com), XP accumulation over multiple sends, and legacy status.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/conversations", "issue": "If a conversation already exists for (user, character), endpoint returns the existing conv WITHOUT dispatching a new opener message — spec-compliant but subtle. Only first-ever creation triggers the opener (verified)."},
+      {"endpoint": "DELETE /api/media/{id}", "issue": "Returns 200 {ok:false} for non-existent media instead of 404 (inconsistent with other DELETE endpoints)."},
+      {"endpoint": "DELETE /api/characters/{id}", "issue": "For official characters (not owned by user), returns 404 rather than 403 — semantically fine (owner_id filter excludes them) but leaks no info."},
+      {"endpoint": "GET /api/auth/discord/callback", "issue": "Only entry redirect tested per instructions. Full OAuth flow with real Discord not tested."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "(Optional) Consider standardising DELETE /api/media/{id} to 404 on missing media for consistency.",
+    "(Optional) If UX requires a fresh opener each time user 'starts a new chat', add a query flag to POST /api/conversations to force new (currently reuses existing conversation)."
+  ],
+  "critical_code_review_comments": [
+    "pg_database.py: `_cond` for None values relies on `data->'k' IS NULL OR = 'null'::jsonb` — works but not indexed by the GIN(jsonb_path_ops) index which excludes null keys. Filters like {owner_id: None} on the 31-row characters table are fine; will need partial index if characters table grows large.",
+    "pg_database.py: `Cursor.sort()` casts JSONB field to text and sorts lexicographically. Works for ISO-timestamps and IDs but will mis-sort numeric fields (e.g., xp, message_count) if ever sorted. Cast to numeric or timestamp where semantic.",
+    "pg_database.py: `Collection.find(flt, projection)` accepts a projection arg for API compatibility but IGNORES it — projections like `{_id:0}` do nothing. Fine because rows are stored as `data JSONB` (no `_id` field), but calling code should be aware.",
+    "pg_database.py: `insert_one` does not enforce unique constraint on `id` — a duplicate id would silently create a second row. Not exposed by any existing route (all inserts use `new_id`), but recommend a partial unique index e.g. `CREATE UNIQUE INDEX ON users ((data->>'id'))`.",
+    "server.py: `_add_xp` still performs 3 DB round trips (increment → fetch → set level). Could be a single UPDATE ... RETURNING then a CASE statement for level in one query.",
+    "server.py: 776 lines — starting to bloat. Recommend splitting into routers/{auth,characters,conversations,chat,images,voice,media,social}.py.",
+    "server.py: /api/chat/stream accepts JWT via query string (necessary for EventSource). Ensure access-log scrubbing at edge to avoid tokens in logs.",
+    "server.py: `_generate_avatar_for_character` fire-and-forget asyncio task — no retry, no failure notification. If Pollinations is down at creation time, custom character will have a placeholder avatar forever.",
+    "server.py: `POST /api/chat/proactive` and `/api/live-action/perform` accept `character_id` as query parameter but not as body — inconsistent with other endpoints which use body. Minor API-surface polish.",
+    "seed_data.py: 506 lines is fine but consider externalising character data to a JSON/YAML file to make edits reviewable without touching code.",
+    "bcrypt: passlib emits 'AttributeError: module bcrypt has no attribute __about__' warning in logs — cosmetic, hashing works, but pin bcrypt<4.1 or upgrade passlib to silence.",
+    "images/generate/images/chat: HTTPException(503) is raised when Pollinations doesn't return a valid image, but the Cloudflare edge preserves 503 fine (unlike 502 in previous iter). No action needed.",
+    "voice/tts: `pick_voice` accepts (voice_style, gender) but seed_data may set `voice_style` = free-text names like 'Confident Vocal Fry' that aren't in VOICE_POOL → falls back to DEFAULT_VOICE. Consider normalising voice_style values across seed data."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (38/38)", "frontend": "not tested"},
+  "test_credentials": "Tests self-register TEST_pg_<uuid>@velvet.ai on every run — no seed credentials needed. /app/memory/test_credentials.md exists but references old smoketest account.",
+  "seed_data_creation": "None persistent — throwaway TEST_pg_* user + 1 TEST_CustomChar (deleted within suite) + 1 media entry (deleted within suite). No pollution of production data.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Postgres migration verified end-to-end. Backend base URL: REACT_APP_BACKEND_URL (Cloudflare edge). All routes work via public URL. pg_database.py correctly emulates Motor for find/find_one/insert_one/update_one/delete_*/count_documents with $set/$inc/$or/None. Pollinations (image) and Edge-TTS (voice) both FREE and working. OpenRouter LLM key has balance. Postgres runs under supervisor as 'postgresql'. Frontend testing was NOT requested this iteration. Discord OAuth full flow NOT tested (only 307 entry redirect).",
+  "rca of the issue": "N/A — no failures. Initial run had 1 failure caused by pytest-xdist LoadScope splitting classes across workers, breaking the previous suite's `pytest.shared_char_id` cross-class state. Refactored to use proper session-scoped fixtures (official_char_id, shared_conversation, generated_media_id) so each worker independently sets up what its classes need. Second run: 38/38 PASS in 49s."
+}

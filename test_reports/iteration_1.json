@@ -1,0 +1,33 @@
+{
+  "summary": "Backend testing of VelvetAI: 32/32 pytest tests passing across health, auth, characters (incl. 31 seeded), conversations, chat (incl. SSE streaming + OpenRouter LLM), images (graceful 502 from Fal.ai exhausted balance), voice (graceful 502 from ElevenLabs paid plan), scenarios (12), stories, live, roulette, media, and legacy /api/status. All endpoints respond with correct status codes, response shapes, and persisted data.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/images/generate, /api/voice/tts", "issue": "External Cloudflare/k8s ingress masks upstream 502 JSON responses with generic HTML 502 page. FastAPI returns correct JSON 502 with detail when hit via localhost:8001. Frontend calls via REACT_APP_BACKEND_URL will receive HTML 502 instead of JSON detail. Consider returning 200 with {ok:false, error:...} payload OR a non-502 status code (e.g., 400/503) so the JSON body survives the edge proxy."},
+      {"endpoint": "/api/media/{id} DELETE", "issue": "Returns 200 with {ok:false} for non-existent media (instead of 404). Inconsistent with other DELETE endpoints. Minor — not blocking."},
+      {"endpoint": "/api/conversations POST", "issue": "When existing conversation found, returns it without dispatching an opening message. The first-ever creation does send opener — but spec says 'returns one assistant opening message' — verified working on fresh conversation only."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Consider returning non-502 (e.g., 200 with error payload, or 503) for Fal.ai/ElevenLabs failures so JSON detail survives Cloudflare ingress and frontend can show meaningful errors.",
+    "Optional: make DELETE /api/media/{id} return 404 for missing media for consistency.",
+    "Top up Fal.ai balance and upgrade ElevenLabs plan to enable image/voice generation in production."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 617 lines — consider splitting routers into modules (auth, characters, chat, etc.) once it grows further.",
+    "Datetime persisted as ISO strings in some places and as datetime in others — already handled with _clean helper, but consider a single serialization layer.",
+    "_add_xp performs 3 DB round trips per call; could be optimized with a single update + level-calculation pipeline.",
+    "/api/chat/stream uses token in query string (necessary for EventSource) — acceptable but log scrubbing of query strings recommended.",
+    "Image avatar generation for newly created custom characters is fire-and-forget via asyncio.create_task — will silently fail if Fal.ai balance exhausted (no retry or notification)."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py", "/app/backend/tests/__init__.py"],
+  "success_rate": {"backend": "100% (32/32)", "frontend": "not tested"},
+  "test_credentials": "Tests register a fresh TEST_user_<uuid>@velvet.ai user on the fly each run. No pre-seeded credentials required. /app/memory/test_credentials.md is empty.",
+  "seed_data_creation": "None — only TEST_-prefixed throwaway users + 1 TEST_CustomChar (deleted within suite).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend fully tested and passing. backend_test.py uses external REACT_APP_BACKEND_URL for most tests but localhost:8001 for /api/images/generate and /api/voice/tts because Cloudflare/k8s edge ingress rewrites upstream 502 responses to HTML — the FastAPI app itself correctly returns JSON 502 with detail. OpenRouter LLM key is working (chat/send and chat/stream both verified producing real replies). Fal.ai and ElevenLabs keys have no balance/free-tier — endpoints handle errors gracefully. Frontend testing not requested in this iteration.",
+  "rca of the issue": "External 502 responses arrived as HTML instead of JSON. RCA: Cloudflare edge in front of the preview environment intercepts upstream HTTP 502 status codes and substitutes its own generic 'preview.emergentagent.com | 502: Bad gateway' HTML page. Confirmed by hitting http://localhost:8001/api/images/generate directly — returns clean JSON {detail: 'User is locked. Reason: Exhausted balance...'} with content-type application/json. The backend implementation (raising HTTPException(502, res['error'])) is correct. Mitigation: either (a) change error status from 502 to 400/503 to avoid edge rewrite, or (b) return 200 with structured error payload so frontend gets the detail."
+}
