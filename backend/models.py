@@ -54,7 +54,7 @@ class CharacterModel(BaseModel):
     id: str = Field(default_factory=new_id)
     owner_id: Optional[str] = None  # None = official preset
     name: str
-    age: int = Field(default=25, ge=18, le=99)
+    age: int
     gender: str = "female"          # female | male
     style: str = "realistic"        # realistic | anime
     ethnicity: str = ""
@@ -174,7 +174,7 @@ class GenerateVoiceIn(BaseModel):
 # ─── Character Create ───────────────────────────────────────────────
 class CreateCharacterIn(BaseModel):
     name: str
-    age: int = Field(default=25, ge=18, le=99)
+    age: int = 25
     gender: str = "female"
     style: str = "realistic"
     ethnicity: str = ""

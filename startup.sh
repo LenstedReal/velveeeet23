@@ -11,11 +11,7 @@ if [ ! -x /workspace/.venv/bin/python ]; then
   /workspace/.venv/bin/pip install -q -r /workspace/requirements.txt
 fi
 
-if [ ! -d /workspace/frontend/node_modules ]; then
-  (cd /workspace/frontend && npm install --legacy-peer-deps)
-fi
-
-npm run dev > /tmp/velvet-dev.log 2>&1 &
+npm run dev >/tmp/velvet-dev.log 2>&1 &
 
 for i in $(seq 1 90); do
   if curl -sf -o /dev/null http://127.0.0.1:8080/; then

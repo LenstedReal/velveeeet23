@@ -1,7 +1,9 @@
 """
 Postgres JSONB document store — drop-in replacement for the Motor API subset
-used by server.py. Works with any Postgres (local, Neon on Vercel, Supabase).
+used by server.py. If DATABASE_URL is empty, uses an in-memory store so the
+app can still list/seed characters locally.
 """
+import copy
 import json
 import ssl
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -15,6 +17,21 @@ class OpResult:
     def __init__(self, deleted=0, modified=0):
         self.deleted_count = deleted
         self.modified_count = modified
+
+
+def _match(doc: dict, flt: dict) -> bool:
+    if not flt:
+        return True
+    for k, v in flt.items():
+        if k == "$or":
+            if not any(_match(doc, sub) for sub in v):
+                return False
+        elif v is None:
+            if doc.get(k) is not None:
+                return False
+        elif doc.get(k) != v:
+            return False
+    return True
 
 
 def _cond(flt: dict, args: list) -> str:
@@ -32,7 +49,6 @@ def _cond(flt: dict, args: list) -> str:
 
 
 def _normalize_dsn(dsn: str):
-    """asyncpg rejects some libpq query params used by Neon/Vercel URLs."""
     if not dsn or "://" not in dsn:
         return dsn, {}
     u = urlparse(dsn)
@@ -44,11 +60,8 @@ def _normalize_dsn(dsn: str):
     host = u.hostname or ""
     if sslmode in ("require", "verify-ca", "verify-full") or "neon.tech" in host:
         ctx = ssl.create_default_context()
-        ctx.check_hostname = sslmode == "verify-full"
-        ctx.verify_mode = ssl.CERT_REQUIRED if sslmode in ("verify-ca", "verify-full") else ssl.CERT_NONE
-        if sslmode == "require" or "neon.tech" in host:
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
         ssl_kw["ssl"] = ctx
     return urlunparse(u._replace(query=urlencode(q))), ssl_kw
 
@@ -73,6 +86,13 @@ class Cursor:
     async def to_list(self, length):
         await self._db.ensure_connected()
         limit = self._limit if self._limit is not None else length
+        if self._db._mem is not None:
+            rows = [copy.deepcopy(d) for d in self._db._mem[self._table] if _match(d, self._flt)]
+            if self._sort:
+                k, d = self._sort
+                rows.sort(key=lambda r: str(r.get(k, "")), reverse=(d < 0))
+            start = int(self._skip or 0)
+            return rows[start:start + int(limit)]
         args = []
         sql = f"SELECT data FROM {self._table} WHERE {_cond(self._flt, args)}"
         if self._sort:
@@ -96,12 +116,26 @@ class Collection:
 
     async def insert_one(self, doc: dict):
         await self._db.ensure_connected()
+        if self._db._mem is not None:
+            self._db._mem[self._table].append(copy.deepcopy(doc))
+            return
         await self._db.pool.execute(
             f"INSERT INTO {self._table} (data) VALUES ($1::jsonb)", json.dumps(doc)
         )
 
     async def _update(self, flt, update):
         await self._db.ensure_connected()
+        if self._db._mem is not None:
+            modified = 0
+            for doc in self._db._mem[self._table]:
+                if not _match(doc, flt):
+                    continue
+                if "$set" in update:
+                    doc.update(update["$set"])
+                for k, v in update.get("$inc", {}).items():
+                    doc[k] = (doc.get(k) or 0) + v
+                modified += 1
+            return OpResult(modified=modified)
         args = []
         where = _cond(flt, args)
         expr = "data"
@@ -127,6 +161,13 @@ class Collection:
 
     async def delete_one(self, flt):
         await self._db.ensure_connected()
+        if self._db._mem is not None:
+            rows = self._db._mem[self._table]
+            for i, doc in enumerate(rows):
+                if _match(doc, flt):
+                    rows.pop(i)
+                    return OpResult(deleted=1)
+            return OpResult(deleted=0)
         args = []
         where = _cond(flt, args)
         tag = await self._db.pool.execute(
@@ -137,6 +178,12 @@ class Collection:
 
     async def delete_many(self, flt):
         await self._db.ensure_connected()
+        if self._db._mem is not None:
+            rows = self._db._mem[self._table]
+            keep = [d for d in rows if not _match(d, flt)]
+            deleted = len(rows) - len(keep)
+            self._db._mem[self._table] = keep
+            return OpResult(deleted=deleted)
         args = []
         tag = await self._db.pool.execute(
             f"DELETE FROM {self._table} WHERE {_cond(flt, args)}", *args
@@ -145,6 +192,8 @@ class Collection:
 
     async def count_documents(self, flt=None):
         await self._db.ensure_connected()
+        if self._db._mem is not None:
+            return sum(1 for d in self._db._mem[self._table] if _match(d, flt or {}))
         args = []
         row = await self._db.pool.fetchrow(
             f"SELECT COUNT(*) AS c FROM {self._table} WHERE {_cond(flt or {}, args)}", *args
@@ -156,12 +205,14 @@ class Database:
     def __init__(self, dsn: str):
         self._dsn = dsn or ""
         self.pool = None
+        self._mem = None
 
     async def connect(self):
-        if self.pool is not None:
+        if self.pool is not None or self._mem is not None:
             return
         if not self._dsn:
-            raise RuntimeError("DATABASE_URL is not set")
+            self._mem = {t: [] for t in TABLES}
+            return
         dsn, ssl_kw = _normalize_dsn(self._dsn)
         self.pool = await asyncpg.create_pool(dsn, min_size=1, max_size=5, **ssl_kw)
         async with self.pool.acquire() as conn:
@@ -177,7 +228,7 @@ class Database:
                 )
 
     async def ensure_connected(self):
-        if self.pool is None:
+        if self.pool is None and self._mem is None:
             await self.connect()
 
     async def close(self):

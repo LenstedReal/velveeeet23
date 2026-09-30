@@ -17,7 +17,7 @@ from sse_starlette.sse import EventSourceResponse
 from pydantic import BaseModel, Field, ConfigDict
 import uuid
 
-ROOT_DIR = Path(__file__).parent
+ROOT_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT_DIR / ".env")
 
 from models import (
@@ -125,9 +125,7 @@ async def discord_callback(code: str | None = None, error: str | None = None):
     """Exchange code for token, fetch profile, create/login user, redirect with token."""
     from fastapi.responses import RedirectResponse
     import httpx
-    FRONTEND = os.environ.get("FRONTEND_URL")
-    if not FRONTEND:
-        raise HTTPException(500, "FRONTEND_URL is not configured")
+    FRONTEND = os.environ["FRONTEND_URL"]
     if error or not code:
         return RedirectResponse(f"{FRONTEND}/?discord_error={error or 'cancelled'}")
     client_id = os.environ["DISCORD_CLIENT_ID"]
@@ -754,63 +752,22 @@ async def roulette_spin(user_id: str = Depends(get_current_user_id)):
 
 
 # ═══ STARTUP ═════════════════════════════════════════════════════════
-_seeded = False
-
-
-async def _ensure_ready():
-    """Connect + seed on first request. Required on Vercel where startup events are skipped."""
-    global _seeded
-    if _seeded:
-        return
-    if not db._dsn:
-        log.warning("DATABASE_URL is not set — database routes will fail")
-        return
-    await db.connect()
-    inserted = await seed_characters(db)
-    upgraded = await upgrade_character_images(db)
-    log.info(f"VelvetAI ready — seeded {inserted} characters, upgraded {upgraded} images")
-    _seeded = True
-
-
-from fastapi.responses import JSONResponse
-
-_DB_PATHS = (
-    "/api/characters",
-    "/api/conversations",
-    "/api/chat",
-    "/api/auth",
-    "/api/images",
-    "/api/voice",
-    "/api/media",
-    "/api/stories",
-    "/api/live",
-    "/api/roulette",
-    "/api/status",
-    "/api/live-action",
-)
-
-
-@app.middleware("http")
-async def _db_ready_middleware(request, call_next):
-    path = request.url.path or "/"
-    needs_db = any(path.startswith(p) for p in _DB_PATHS)
-    if needs_db and not db._dsn:
-        return JSONResponse({"detail": "DATABASE_URL is not configured"}, status_code=503)
-    try:
-        await _ensure_ready()
-    except Exception:
-        log.exception("Database initialization failed")
-        if needs_db:
-            return JSONResponse({"detail": "Database unavailable"}, status_code=503)
-    return await call_next(request)
+_startup_lock = asyncio.Lock()
+_started = False
 
 
 @app.on_event("startup")
 async def startup():
-    try:
-        await _ensure_ready()
-    except Exception:
-        log.exception("Startup database init failed — will retry on first request")
+    # Vercel serverless may skip ASGI lifespan; ensure_started() covers that.
+    global _started
+    async with _startup_lock:
+        if _started:
+            return
+        await db.connect()
+        inserted = await seed_characters(db)
+        upgraded = await upgrade_character_images(db)
+        log.info(f"VelvetAI starting — seeded {inserted} characters, upgraded {upgraded} images")
+        _started = True
 
 
 @app.on_event("shutdown")
@@ -818,15 +775,20 @@ async def shutdown():
     await db.close()
 
 
-app.include_router(api_router)
+@app.middleware("http")
+async def ensure_started(request, call_next):
+    if not _started:
+        await startup()
+    return await call_next(request)
 
-_cors_raw = os.environ.get("CORS_ORIGINS", "*")
-_cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()] or ["*"]
-_cors_credentials = "*" not in _cors_origins
+
+app.include_router(api_router)
+_cors = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip() and o.strip() != "*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=_cors_credentials,
-    allow_origins=_cors_origins,
+    allow_credentials=True,
+    allow_origins=_cors,
+    allow_origin_regex=None if _cors else r"https?://.*",
     allow_methods=["*"],
     allow_headers=["*"],
 )

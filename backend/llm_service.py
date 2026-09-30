@@ -6,15 +6,12 @@ import json
 import httpx
 from typing import List, Dict, AsyncGenerator
 
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "sao10k/l3.1-euryale-70b")
 OPENROUTER_FALLBACK_MODEL = os.environ.get(
     "OPENROUTER_FALLBACK_MODEL", "cognitivecomputations/dolphin-mixtral-8x22b"
 )
-
-
-def _openrouter_key() -> str:
-    return os.environ.get("OPENROUTER_API_KEY", "")
 
 
 def build_system_prompt(character: Dict) -> str:
@@ -78,11 +75,11 @@ async def stream_chat(
     model: str = None,
 ) -> AsyncGenerator[str, None]:
     """Yield text chunks from OpenRouter streaming completion."""
-    api_key = _openrouter_key()
+    api_key = os.environ.get("OPENROUTER_API_KEY", "") or OPENROUTER_API_KEY
     if not api_key:
-        yield "I'm having trouble connecting right now — the chat service is not configured."
+        yield "Chat is not configured yet — set OPENROUTER_API_KEY to enable replies."
         return
-    chosen_model = model or os.environ.get("OPENROUTER_MODEL", OPENROUTER_MODEL)
+    chosen_model = model or OPENROUTER_MODEL
     messages = [
         {"role": "system", "content": build_system_prompt(character)},
         *[{"role": m["role"], "content": m["content"]} for m in history if m.get("role") in ("user", "assistant")],
@@ -104,17 +101,16 @@ async def stream_chat(
         "HTTP-Referer": "https://velvetai.app",
         "X-Title": "VelvetAI",
     }
-    url = f"{os.environ.get('OPENROUTER_BASE_URL', OPENROUTER_BASE_URL)}/chat/completions"
+    url = f"{OPENROUTER_BASE_URL}/chat/completions"
 
     async with httpx.AsyncClient(timeout=120) as client:
         try:
             async with client.stream("POST", url, json=payload, headers=headers) as resp:
                 if resp.status_code != 200:
                     text = await resp.aread()
-                    fallback = os.environ.get("OPENROUTER_FALLBACK_MODEL", OPENROUTER_FALLBACK_MODEL)
                     # Try fallback model on first attempt only
-                    if model is None and chosen_model != fallback:
-                        async for chunk in stream_chat(character, history, user_message, fallback):
+                    if model is None and chosen_model != OPENROUTER_FALLBACK_MODEL:
+                        async for chunk in stream_chat(character, history, user_message, OPENROUTER_FALLBACK_MODEL):
                             yield chunk
                         return
                     yield f"\n\n[Error: model unavailable. {text.decode('utf-8', errors='ignore')[:200]}]"

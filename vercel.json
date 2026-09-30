@@ -1,15 +1,9 @@
 {
-  "installCommand": "pip install -r requirements.txt",
-  "buildCommand": "cd frontend && yarn install --legacy-peer-deps && yarn build",
-  "outputDirectory": "frontend/build",
-  "framework": null,
+  "framework": "nextjs",
   "functions": {
     "api/index.py": {
+      "includeFiles": "backend/**",
       "maxDuration": 60
     }
-  },
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index" },
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
+  }
 }

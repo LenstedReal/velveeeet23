@@ -1,0 +1,147 @@
+diff --git a/backend/auth_utils.py b/backend/auth_utils.py
+index c3be911..b8f7449 100644
+--- a/backend/auth_utils.py
++++ b/backend/auth_utils.py
+@@ -9,7 +9,9 @@ from jose import jwt, JWTError
+ from fastapi import Depends, HTTPException, status
+ from fastapi.security import OAuth2PasswordBearer
+ 
+-JWT_SECRET = os.environ["JWT_SECRET"]
++JWT_SECRET = os.environ.get("JWT_SECRET", "")
++if not JWT_SECRET:
++    raise RuntimeError("JWT_SECRET env variable is not set")
+ JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
+ JWT_EXPIRE_HOURS = int(os.environ.get("JWT_EXPIRE_HOURS", "720"))
+ 
+diff --git a/backend/llm_service.py b/backend/llm_service.py
+index f796b71..1ac82b8 100644
+--- a/backend/llm_service.py
++++ b/backend/llm_service.py
+@@ -6,7 +6,7 @@ import json
+ import httpx
+ from typing import List, Dict, AsyncGenerator
+ 
+-OPENROUTER_API_KEY = os.environ["OPENROUTER_API_KEY"]
++OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+ OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+ OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "sao10k/l3.1-euryale-70b")
+ OPENROUTER_FALLBACK_MODEL = os.environ.get(
+diff --git a/backend/server.py b/backend/server.py
+index ae3a4f1..a2b1105 100644
+--- a/backend/server.py
++++ b/backend/server.py
+@@ -37,7 +37,7 @@ from image_overrides import upgrade_character_images
+ 
+ # ─── DB (Postgres JSONB) ─────────────────────────────────────────────
+ from pg_database import Database
+-db = Database(os.environ["DATABASE_URL"])
++db = Database(os.environ.get("DATABASE_URL", ""))
+ 
+ # ─── App ─────────────────────────────────────────────────────────────
+ app = FastAPI(title="VelvetAI API")
+@@ -752,9 +752,19 @@ async def roulette_spin(user_id: str = Depends(get_current_user_id)):
+ 
+ 
+ # ═══ STARTUP ═════════════════════════════════════════════════════════
++_startup_lock = asyncio.Lock()
++_started = False
++
++
+ @app.on_event("startup")
+ async def startup():
+-    await db.connect()
++    # Vercel serverless may skip ASGI lifespan; ensure_started() covers that.
++    global _started
++    async with _startup_lock:
++        if _started:
++            return
++        await db.connect()
++        _started = True
+     inserted = await seed_characters(db)
+     upgraded = await upgrade_character_images(db)
+     log.info(f"VelvetAI starting — seeded {inserted} characters, upgraded {upgraded} images")
+@@ -765,11 +775,20 @@ async def shutdown():
+     await db.close()
+ 
+ 
++@app.middleware("http")
++async def ensure_started(request, call_next):
++    if not _started:
++        await startup()
++    return await call_next(request)
++
++
+ app.include_router(api_router)
++_cors = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip() and o.strip() != "*"]
+ app.add_middleware(
+     CORSMiddleware,
+     allow_credentials=True,
+-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
++    allow_origins=_cors,
++    allow_origin_regex=None if _cors else r"https?://.*",
+     allow_methods=["*"],
+     allow_headers=["*"],
+ )
+diff --git a/frontend/src/context/AuthContext.jsx b/frontend/src/context/AuthContext.jsx
+index 9c0eb66..4922cca 100644
+--- a/frontend/src/context/AuthContext.jsx
++++ b/frontend/src/context/AuthContext.jsx
+@@ -138,7 +138,7 @@ export const AuthProvider = ({ children }) => {
+       loginWithGoogle: () => { setAuthError('Google sign-in is coming soon'); throw new Error('Google sign-in coming soon'); },
+       loginWithDiscord: () => {
+         // Redirect to backend Discord OAuth flow
+-        const API = process.env.REACT_APP_BACKEND_URL;
++        const API = (process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '');
+         window.location.href = `${API}/api/auth/discord/login`;
+       },
+       addXP, addCharacter, removeCharacter, refreshMyCharacters,
+diff --git a/frontend/src/services/api.js b/frontend/src/services/api.js
+index 222273c..bd2cce9 100644
+--- a/frontend/src/services/api.js
++++ b/frontend/src/services/api.js
+@@ -3,7 +3,7 @@
+  */
+ import axios from 'axios';
+ 
+-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
++const BACKEND_URL = (process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '');
+ export const API = `${BACKEND_URL}/api`;
+ 
+ const api = axios.create({
+diff --git a/requirements.txt b/requirements.txt
+index ac0c9aa..a24fc5e 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -8,5 +8,6 @@ httpx>=0.27.0
+ passlib[bcrypt]==1.7.4
+ bcrypt==4.0.1
+ PyJWT>=2.10.1
++python-jose[cryptography]>=3.3.0
+ sse-starlette>=2.1.0
+ edge-tts>=6.1.0
+diff --git a/vercel.json b/vercel.json
+index cd27d5f..4251c5c 100644
+--- a/vercel.json
++++ b/vercel.json
+@@ -4,7 +4,18 @@
+   "outputDirectory": "frontend/build",
+   "framework": null,
+   "rewrites": [
+-    { "source": "/api/(.*)", "destination": "/api/index" },
+-    { "source": "/(.*)", "destination": "/index.html" }
+-  ]
++    {
++      "source": "/api/(.*)",
++      "destination": "/api/index"
++    },
++    {
++      "source": "/(.*)",
++      "destination": "/index.html"
++    }
++  ],
++  "functions": {
++    "api/index.py": {
++      "includeFiles": "backend/**"
++    }
++  }
+ }
