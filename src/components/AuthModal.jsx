@@ -44,7 +44,7 @@ const AuthModal = ({ isOpen, onClose, mode, setMode }) => {
   };
 
   const handleDiscordLogin = () => {
-    setError('Discord sign-in is coming soon. Use email & password for now.');
+    loginWithDiscord?.();
   };
 
   if (success) {
@@ -202,8 +202,13 @@ const AuthModal = ({ isOpen, onClose, mode, setMode }) => {
               <p className="text-white/40 text-xs text-center mt-6">
                 By signing up, you agree to{' '}
                 <a href="/terms" className="text-pink-400 hover:text-pink-300">
-                  Terms of Service
+                  Terms
                 </a>
+                {' '}and{' '}
+                <a href="/privacy" className="text-pink-400 hover:text-pink-300">
+                  Privacy Policy
+                </a>
+                . 18+ only.
               </p>
             )}
 

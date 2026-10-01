@@ -31,8 +31,8 @@ const BottomNav = () => {
             item.isCreate ? (
               <button key={item.label} onClick={item.action}
                 className="flex flex-col items-center justify-center -mt-4">
-                <div className="w-12 h-12 rounded-full overflow-hidden bg-black border border-pink-500/40 shadow-lg shadow-pink-500/30">
-                  <img src="/velvet-cake-mark.jpg" alt="Create" className="w-full h-full object-cover" />
+                <div className="w-12 h-12 rounded-full bg-black border border-pink-500/40 shadow-lg shadow-pink-500/30 flex items-center justify-center overflow-hidden">
+                  <img src="/velvet-cake-logo.jpg" alt="Velvet Cake AI" className="w-full h-full object-contain" />
                 </div>
               </button>
             ) : item.action ? (

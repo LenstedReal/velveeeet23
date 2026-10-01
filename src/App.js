@@ -23,11 +23,12 @@ import CharacterListPage from './components/CharacterListPage';
 import CharacterDetailPage from './components/CharacterDetailPage';
 import LiveActionPage from './components/LiveActionPage';
 import PreviewHostBridge from './components/PreviewHostBridge';
+import LegalPage from './components/LegalPage';
 
 const HomePage = () => (
   <div className="min-h-screen bg-[#0a0a0c]">
     <Header />
-    <main className="pt-16 pb-20 lg:pb-0">
+    <main className="pt-20 pb-20 lg:pb-0">
       <HeroCarousel />
       <StoriesBar />
       <LiveSection />
@@ -65,10 +66,12 @@ const GalleryPage = () => (
 
 function App() {
   const [isAgeVerified, setIsAgeVerified] = useState(false);
+  const [gateReady, setGateReady] = useState(false);
 
   useEffect(() => {
     const verified = localStorage.getItem('velvetai_age_verified');
     if (verified === 'true') setIsAgeVerified(true);
+    setGateReady(true);
   }, []);
 
   const handleAgeVerified = () => {
@@ -76,7 +79,7 @@ function App() {
     setIsAgeVerified(true);
   };
 
-  if (!isAgeVerified) return <AgeVerification onVerified={handleAgeVerified} />;
+  if (!gateReady) return <div className="min-h-screen bg-[#0a0a0c]" />;
 
   return (
     <AuthProvider>
@@ -84,18 +87,27 @@ function App() {
         <BrowserRouter>
           <PreviewHostBridge />
           <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/girls" element={<CharacterListPage gender="female" style="realistic" />} />
-            <Route path="/anime" element={<CharacterListPage style="anime" />} />
-            <Route path="/guys" element={<CharacterListPage gender="male" />} />
-            <Route path="/my-ai" element={<MyAIPage />} />
-            <Route path="/gallery" element={<GalleryPage />} />
-            <Route path="/generate" element={<GenerateImagePage />} />
-            <Route path="/generate-image" element={<GenerateImagePage />} />
-            <Route path="/roleplay" element={<RoleplayPage />} />
-            <Route path="/roulette" element={<RoulettePage />} />
-            <Route path="/live-action" element={<LiveActionPage />} />
-            <Route path="/character/:id" element={<CharacterDetailPage />} />
+            <Route path="/terms" element={<LegalPage kind="terms" />} />
+            <Route path="/privacy" element={<LegalPage kind="privacy" />} />
+            <Route path="/age-policy" element={<LegalPage kind="age" />} />
+            {!isAgeVerified ? (
+              <Route path="*" element={<AgeVerification onVerified={handleAgeVerified} />} />
+            ) : (
+              <>
+                <Route path="/" element={<HomePage />} />
+                <Route path="/girls" element={<CharacterListPage gender="female" style="realistic" />} />
+                <Route path="/anime" element={<CharacterListPage style="anime" />} />
+                <Route path="/guys" element={<CharacterListPage gender="male" />} />
+                <Route path="/my-ai" element={<MyAIPage />} />
+                <Route path="/gallery" element={<GalleryPage />} />
+                <Route path="/generate" element={<GenerateImagePage />} />
+                <Route path="/generate-image" element={<GenerateImagePage />} />
+                <Route path="/roleplay" element={<RoleplayPage />} />
+                <Route path="/roulette" element={<RoulettePage />} />
+                <Route path="/live-action" element={<LiveActionPage />} />
+                <Route path="/character/:id" element={<CharacterDetailPage />} />
+              </>
+            )}
           </Routes>
         </BrowserRouter>
       </div>

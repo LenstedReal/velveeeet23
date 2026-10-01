@@ -127,21 +127,9 @@ const Footer = () => {
         {/* Bottom */}
         <div className="pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-white/40 text-sm">
-            © 2027 VelvetAI ® by <span className="text-pink-400">LenstedReal</span>. All Rights Reserved
+            © 2026 Velvet Cake AI ® by <span className="text-pink-400">LenstedReal</span>. All Rights Reserved
           </p>
-          <div className="flex items-center gap-4">
-            <span className="text-white/30 text-xs">Secure payments by</span>
-            <img
-              src="https://upload.wikimedia.org/wikipedia/commons/5/5e/Visa_Inc._logo.svg"
-              alt="Visa"
-              className="h-5 opacity-40"
-            />
-            <img
-              src="https://upload.wikimedia.org/wikipedia/commons/2/2a/Mastercard-logo.svg"
-              alt="Mastercard"
-              className="h-5 opacity-40"
-            />
-          </div>
+          <p className="text-white/30 text-xs">18+ only · No payments · Free to use</p>
         </div>
       </div>
     </footer>

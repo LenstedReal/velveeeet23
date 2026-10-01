@@ -10,14 +10,27 @@ from jose import jwt, JWTError
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
-# Production must set JWT_SECRET. Local/preview generates an ephemeral one so
-# the API can boot (guest auth) without crashing the whole process.
-JWT_SECRET = os.environ.get("JWT_SECRET") or secrets.token_hex(32)
-JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
-JWT_EXPIRE_HOURS = int(os.environ.get("JWT_EXPIRE_HOURS", "720"))
+# JWT is always read from the environment at use-time so a Vercel JWT_SECRET
+# change applies on the next request (no hardcoded production key in source).
+_EPHEMERAL_JWT = secrets.token_hex(32)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+
+
+def _jwt_secret() -> str:
+    return os.environ.get("JWT_SECRET") or _EPHEMERAL_JWT
+
+
+def _jwt_algorithm() -> str:
+    return os.environ.get("JWT_ALGORITHM") or "HS256"
+
+
+def _jwt_expire_hours() -> int:
+    try:
+        return int(os.environ.get("JWT_EXPIRE_HOURS") or "720")
+    except ValueError:
+        return 720
 
 
 def hash_password(password: str) -> str:
@@ -32,14 +45,14 @@ def verify_password(password: str, hashed: str) -> bool:
 
 
 def create_access_token(user_id: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS)
+    expire = datetime.now(timezone.utc) + timedelta(hours=_jwt_expire_hours())
     payload = {"sub": user_id, "exp": expire}
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return jwt.encode(payload, _jwt_secret(), algorithm=_jwt_algorithm())
 
 
 def decode_token(token: str) -> Optional[str]:
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token, _jwt_secret(), algorithms=[_jwt_algorithm()])
         return payload.get("sub")
     except JWTError:
         return None

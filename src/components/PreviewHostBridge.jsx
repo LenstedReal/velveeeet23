@@ -7,6 +7,7 @@ const VERSION = 1;
 const ROUTES = [
   '/', '/girls', '/anime', '/guys', '/my-ai', '/gallery',
   '/generate', '/generate-image', '/roleplay', '/roulette', '/live-action',
+  '/terms', '/privacy', '/age-policy',
 ];
 
 export default function PreviewHostBridge() {

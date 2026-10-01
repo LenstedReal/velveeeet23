@@ -125,12 +125,14 @@ async def discord_callback(code: str | None = None, error: str | None = None):
     """Exchange code for token, fetch profile, create/login user, redirect with token."""
     from fastapi.responses import RedirectResponse
     import httpx
-    FRONTEND = os.environ["FRONTEND_URL"]
+    FRONTEND = os.environ.get("FRONTEND_URL") or "https://velvet-cakeai.vercel.app"
     if error or not code:
         return RedirectResponse(f"{FRONTEND}/?discord_error={error or 'cancelled'}")
-    client_id = os.environ["DISCORD_CLIENT_ID"]
-    client_secret = os.environ["DISCORD_CLIENT_SECRET"]
-    redirect_uri = os.environ["DISCORD_REDIRECT_URI"]
+    client_id = os.environ.get("DISCORD_CLIENT_ID")
+    client_secret = os.environ.get("DISCORD_CLIENT_SECRET")
+    redirect_uri = os.environ.get("DISCORD_REDIRECT_URI")
+    if not client_id or not client_secret or not redirect_uri:
+        return RedirectResponse(f"{FRONTEND}/?discord_error=not_configured")
     try:
         async with httpx.AsyncClient(timeout=15) as client_http:
             # Exchange code → access_token

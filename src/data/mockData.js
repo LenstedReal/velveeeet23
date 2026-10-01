@@ -414,7 +414,7 @@ export const faqData = [
   { question: "Can I create my own AI companion?", answer: "Absolutely! Use our advanced character creator to design your perfect companion. Choose ethnicity, age (18-50), hair, eyes, body type, personality traits, voice style, and backstory. Your creations are saved to 'My AI' section." },
   { question: "What can my AI companion do?", answer: "Your companion can: Chat with memory of past conversations, send custom photos on request, generate videos, engage in voice/video calls, participate in roleplay scenarios, and adapt to your preferences over time." },
   { question: "How does the level system work?", answer: "Interact with your companions to earn XP and level up! Higher levels unlock exclusive content, special roleplay scenarios, and enhanced features. All levels are free - just keep chatting!" },
-  { question: "Is my data private?", answer: "100% private. All conversations are encrypted end-to-end. We never share or sell your data. What happens on VelvetAI stays on VelvetAI." },
+  { question: "Is my data private?", answer: "We do not sell your data. Chats are stored on our servers so your history works, and are sent to our AI provider to generate replies — they are not end-to-end encrypted. See the Privacy Policy for details." },
   { question: "Can I roleplay with my AI?", answer: "Yes! VelvetAI supports all types of roleplay scenarios. Choose from pre-made scenarios or create your own. Your companion adapts to any situation - the only limit is your creativity." },
   { question: "How do I get photos and videos?", answer: "Simply ask your companion in chat! Click 'Request Photo' or 'Request Video' buttons, or just type what you want. All media generation is FREE and unlimited." }
 ];
@@ -429,18 +429,18 @@ export const navLinks = [
 export const footerLinks = {
   features: [
     { name: "Generate Image", href: "/generate" },
-    { name: "Chat", href: "/chat" },
-    { name: "Create Character", href: "/create" },
+    { name: "Chat", href: "/my-ai" },
+    { name: "Create Character", href: "/my-ai" },
     { name: "Gallery", href: "/gallery" },
     { name: "My AI", href: "/my-ai" },
     { name: "Roleplay", href: "/roleplay" }
   ],
   popular: [
-    { name: "VelvetAI", href: "/" },
+    { name: "Velvet Cake AI", href: "/" },
     { name: "AI Girlfriend", href: "/girls" },
     { name: "AI Anime", href: "/anime" },
     { name: "AI Boyfriend", href: "/guys" },
-    { name: "Voice Calls", href: "/calls" }
+    { name: "Live Action", href: "/live-action" }
   ],
   legal: [
     { name: "Terms and Policies", href: "/terms" },
